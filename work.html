@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络暴力检测系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --type-1: #4e79a7; /* 性别歧视 */
+            --type-2: #59a14f; /* 地域歧视 */
+            --type-3: #e15759; /* 种族歧视 */
+            --type-4: #edc948; /* 人身攻击 */
+            --type-5: #b07aa1; /* 曝光信息 */
+            
+            --status-pending: #f1c40f;
+            --status-reported: #2ecc71;
+            --status-failed: #e74c3c;
+        }
+
+        body {
+            font-family: "微软雅黑", Arial, sans-serif;
+            margin: 20px;
+            color: #2c3e50;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        #chart_container {
+            width: 350px;
+            height: 350px;
+            margin: 0 auto;
+        }
+
+        .type-item::before {
+            content: "";
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 8px;
+            border-radius: 2px;
+        }
+
+        .type-item[data-type="性别歧视"]::before { background: var(--type-1); }
+        .type-item[data-type="地域歧视"]::before { background: var(--type-2); }
+        .type-item[data-type="种族歧视"]::before { background: var(--type-3); }
+        .type-item[data-type="人身攻击"]::before { background: var(--type-4); }
+        .type-item[data-type="曝光个人信息"]::before { background: var(--type-5); }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+        .status-pending { background: var(--status-pending); }
+        .status-reported { background: var(--status-reported); color: white; }
+        .status-failed { background: var(--status-failed); color: white; }
+    </style>
+</head>
+<body>
+    <h1>网络暴力检测系统</h1>
+    <div class="data-limit">（表格显示最新10条记录）</div>
+    
+    <div id="status"></div>
+    <div id="table_container"></div>
+    
+    <div class="dashboard">
+        <div id="chart_container">
+            <canvas id="chart"></canvas>
+        </div>
+        <div id="type_stats">
+            <h3>违规类型分布</h3>
+            <div id="type_list"></div>
+        </div>
+    </div>
+
+    <script>
+        // 新类型配置
+        const VIOLATION_TYPES = [
+            '性别歧视',
+            '地域歧视',
+            '种族歧视', 
+            '人身攻击',
+            '曝光个人信息'
+        ]
+        const TYPE_COLORS = [
+            '#4e79a7',
+            '#59a14f',
+            '#e15759',
+            '#edc948',
+            '#b07aa1'
+        ]
+
+        let dataStore = JSON.parse(localStorage.getItem('dataStore') || '{"allViolations":[],"displayViolations":[]}')
+
+        function makenewdata(count = 5) {
+            const status = ['pending','reported','failed'];
+            return Array.from({length: count}, (_,i) => ({
+                id: Date.now() + i,
+                content: `检测到违规内容：${Math.random().toString(36).substring(2,15)}`,
+                type: VIOLATION_TYPES[Math.floor(Math.random()*VIOLATION_TYPES.length)],
+                status: status[Math.floor(Math.random()*status.length)],
+                timestamp: new Date().toISOString()
+            }));
+        }
+
+        function updateData() {
+            const newData = makenewdata(2)
+            dataStore.allViolations = [...dataStore.allViolations, ...newData]
+            dataStore.displayViolations = [...newData, ...dataStore.displayViolations].slice(0, 10)
+            localStorage.setItem('dataStore', JSON.stringify(dataStore))
+            updatestatus()
+            rendertable()
+            updatechart()
+            updateTypeStats()
+        }
+
+        function updatestatus() {
+            const status = {
+                total: dataStore.allViolations.length,
+                pending: dataStore.allViolations.filter(v => v.status == 'pending').length,
+                reported: dataStore.allViolations.filter(v => v.status == 'reported').length
+            }
+            
+            document.getElementById('status').innerHTML = `
+                <div class="status-grid">
+                    <div class="status-card">
+                        <div class="stat-title">总检测数</div>
+                        <div class="stat-value">${status.total}</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="stat-title">待处理</div>
+                        <div class="stat-value" style="color:var(--status-pending)">${status.pending}</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="stat-title">已处理</div>
+                        <div class="stat-value" style="color:var(--status-reported)">${status.reported}</div>
+                    </div>
+                </div>`
+        }
+
+        function rendertable() {
+            const rows = dataStore.displayViolations.map(v => `
+                <tr>
+                    <td>${v.content.substring(0,25)}...</td>
+                    <td><span class="type-tag" style="background:${TYPE_COLORS[VIOLATION_TYPES.indexOf(v.type)]}20;color:${TYPE_COLORS[VIOLATION_TYPES.indexOf(v.type)]}">
+                        ${v.type}
+                    </span></td>
+                    <td>
+                        <span class="status-badge status-${v.status}">
+                            ${v.status === 'pending' ? '处理中' : 
+                             v.status === 'reported' ? '已处理' : '失败'}
+                        </span>
+                    </td>
+                    <td>${new Date(v.timestamp).toLocaleTimeString()}</td>
+                </tr>
+            `).join('')
+
+            document.getElementById('table_container').innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>内容摘要</th>
+                            <th>违规类型</th>
+                            <th>处理状态</th>
+                            <th>检测时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`
+        }
+
+        let chart = null
+        function updatechart() {
+            const ctx = document.getElementById('chart').getContext('2d')
+            const typecounts = dataStore.allViolations.reduce((acc, cur) => {
+                acc[cur.type] = (acc[cur.type] || 0) + 1
+                return acc
+            }, {})
+
+            if(chart) chart.destroy()
+
+            // 按VIOLATION_TYPES顺序整理数据
+            const labels = VIOLATION_TYPES
+            const data = labels.map(type => typecounts[type] || 0)
+
+            chart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: TYPE_COLORS,
+                        borderWidth: 1,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            position: 'right',
+                            labels: {
+                                usePointStyle: true,
+                                pointStyle: 'rectRounded'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const total = context.dataset.data.reduce((a,b) => a + b, 0)
+                                    const value = context.parsed || 0
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0
+                                    return ` ${context.label}: ${value} (${percentage}%)`
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        }
+
+        function updateTypeStats() {
+            const typecounts = dataStore.allViolations.reduce((acc, cur) => {
+                acc[cur.type] = (acc[cur.type] || 0) + 1
+                return acc
+            }, {})
+            
+            const statsHTML = VIOLATION_TYPES.map(type => `
+                <div class="type-item" data-type="${type}">
+                    <span>${type}</span>
+                    <span>${typecounts[type] || 0}</span>
+                </div>
+            `).join('')
+            
+            document.getElementById('type_list').innerHTML = statsHTML
+        }
+
+        // 初始化
+        updateData()
+        setInterval(updateData, 5000)
+    </script>
+</body>
+</html>
